@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050608">
+<title>CART3R: NIGHTFALL — Mobile</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050608;color:#fff;font-family:Arial,sans-serif;touch-action:none;overscroll-behavior:none}
+#game{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;top:max(10px,env(safe-area-inset-top));left:10px;right:10px;display:flex;justify-content:space-between;gap:6px;z-index:2;pointer-events:none}
+.panel{min-width:64px;padding:7px 10px;background:#080b0ee8;border:1px solid #a52136;border-radius:8px;box-shadow:0 0 12px #a5162733}
+.label{font-size:9px;letter-spacing:1px;color:#ff7185}.value{font-size:19px;font-weight:800;margin-top:2px}
+#controls{position:absolute;left:0;right:0;bottom:max(16px,env(safe-area-inset-bottom));height:160px;z-index:3;pointer-events:none}
+#stickBase{position:absolute;left:22px;bottom:4px;width:132px;height:132px;border:2px solid #ff526b88;border-radius:50%;background:#17101899;pointer-events:auto;touch-action:none}
+#stick{position:absolute;width:54px;height:54px;left:37px;top:37px;border-radius:50%;background:#c51e3cdd;border:2px solid #ff8193;box-shadow:0 0 16px #ff204066}
+.action{position:absolute;right:22px;border:1px solid #ff526b;background:#99152ddd;color:#fff;border-radius:50%;font-weight:800;display:flex;align-items:center;justify-content:center;pointer-events:auto;touch-action:none;user-select:none;box-shadow:0 0 18px #ff204044}
+#fire{width:88px;height:88px;bottom:5px;font-size:14px}
+#reload{width:62px;height:62px;right:118px;bottom:14px;font-size:11px;background:#151a22dd;border-color:#9a5260}
+#overlay{position:absolute;inset:0;background:#030405eF;display:flex;align-items:center;justify-content:center;text-align:center;z-index:5;padding:20px}
+#menu{width:min(92%,420px);padding:28px 22px;border:1px solid #e12c48;background:#0b0d11;border-radius:14px;box-shadow:0 0 35px #b51c343d}
+h1{color:#ff304d;letter-spacing:4px;margin:10px 0}
+button{background:#a91630;border:1px solid #ff526b;color:#fff;padding:14px 28px;font-size:16px;font-weight:bold;border-radius:8px}
+small{color:#aaa;line-height:1.8}
+#hint{position:absolute;bottom:175px;left:0;right:0;text-align:center;color:#a99;font-size:10px;pointer-events:none}
+@media(orientation:portrait){#hint:after{content:" · Rotate your iPhone sideways for a wider arena"}}
+@media(orientation:landscape){#controls{height:145px}#stickBase{width:118px;height:118px}#stick{left:31px;top:31px}#hint{bottom:152px}}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="panel"><div class="label">SCORE</div><div class="value" id="score">0000</div></div>
+  <div class="panel"><div class="label">WAVE</div><div class="value" id="wave">01</div></div>
+  <div class="panel"><div class="label">ENERGY</div><div class="value" id="health">100</div></div>
+  <div class="panel"><div class="label">AMMO</div><div class="value" id="ammo">12 / 12</div></div>
+</div>
+<canvas id="game"></canvas>
+<div id="hint">LEFT THUMB: MOVE · TAP ARENA: AIM · FIRE: SHOOT</div>
+<div id="controls">
+  <div id="stickBase"><div id="stick"></div></div>
+  <div class="action" id="reload">RELOAD</div>
+  <div class="action" id="fire">FIRE</div>
+</div>
+<div id="overlay"><div id="menu">
+  <div class="label">CART3R.JAILBREAK PRESENTS</div>
+  <h1>NIGHTFALL</h1>
+  <p>ARCADE TRAINING SIMULATION</p>
+  <small>LEFT THUMB — MOVE<br>TAP ARENA — AIM<br>FIRE BUTTON — SHOOT<br>RELOAD BUTTON — RELOAD<br><br>Survive the waves. Beat your high score.</small>
+  <br><br><button id="start">START GAME</button>
+  <p id="message"></p>
+</div></div>
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const $=id=>document.getElementById(id);
+let W=0,H=0,dpr=1,running=false,score=0,wave=1,health=100,ammo=12,reloading=false;
+let targets=[],particles=[],spawnTimer=0,lastTime=0,lastShot=0;
+let aim={x:innerWidth*.68,y:innerHeight*.45},move={x:0,y:0};
+let stickPointer=null,aimPointer=null;
+const player={x:0,y:0};
+function resize(){
+  dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
+  canvas.style.width=W+"px";canvas.style.height=H+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  player.x=Math.min(Math.max(player.x,20),W-20);player.y=Math.min(Math.max(player.y,20),H-20);
+  if(!player.x)player.x=W/2;if(!player.y)player.y=H/2;
+}
+addEventListener("resize",resize);resize();
+function updateHUD(){
+  $("score").textContent=String(score).padStart(4,"0");
+  $("wave").textContent=String(wave).padStart(2,"0");
+  $("health").textContent=health;
+  $("ammo").textContent=reloading?"...":ammo+" / 12";
+}
+function spawnTarget(){
+  const side=Math.floor(Math.random()*4);let x,y;
+  if(side===0){x=Math.random()*W;y=-25}else if(side===1){x=W+25;y=Math.random()*H}
+  else if(side===2){x=Math.random()*W;y=H+25}else{x=-25;y=Math.random()*H}
+  targets.push({x,y,r:Math.max(13,23-wave*.45),speed:48+wave*7+Math.random()*24});
+}
+function fire(){
+  if(!running||ammo<=0||reloading)return;
+  const now=performance.now();if(now-lastShot<190)return;lastShot=now;ammo--;
+  let hit=-1,best=Infinity;
+  targets.forEach((t,i)=>{const d=Math.hypot(t.x-aim.x,t.y-aim.y);if(d<t.r+16&&d<best){hit=i;best=d}});
+  if(hit>=0){
+    const t=targets.splice(hit,1)[0];score+=100;
+    for(let i=0;i<12;i++)particles.push({x:t.x,y:t.y,vx:(Math.random()-.5)*180,vy:(Math.random()-.5)*180,life:.55});
+  }else particles.push({x:aim.x,y:aim.y,vx:0,vy:0,life:.12});
+  updateHUD();
+}
+function reload(){
+  if(!running||reloading||ammo===12)return;
+  reloading=true;updateHUD();
+  setTimeout(()=>{if(running){ammo=12;reloading=false;updateHUD()}},1050);
+}
+function draw(){
+  ctx.fillStyle="#080b10";ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle="#17232d";ctx.lineWidth=1;
+  for(let x=0;x<W;x+=42){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+  for(let y=0;y<H;y+=42){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+  const glow=ctx.createRadialGradient(W/2,H/2,10,W/2,H/2,W*.7);
+  glow.addColorStop(0,"#15202a22");glow.addColorStop(1,"#000000cc");ctx.fillStyle=glow;ctx.fillRect(0,0,W,H);
+  targets.forEach(t=>{
+    ctx.save();ctx.translate(t.x,t.y);ctx.shadowBlur=18;ctx.shadowColor="#ff2348";
+    ctx.fillStyle="#171d26";ctx.strokeStyle="#ff3555";ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(0,0,t.r,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.shadowBlur=0;ctx.strokeStyle="#ff7185";ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(0,0,t.r*.5,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle="#ff405d";ctx.fillRect(-4,-4,8,8);ctx.restore();
+  });
+  particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life/.55);ctx.fillStyle="#ff405d";ctx.fillRect(p.x-2,p.y-2,4,4)});ctx.globalAlpha=1;
+  ctx.save();ctx.translate(aim.x,aim.y);ctx.strokeStyle="#ff526b";ctx.lineWidth=2;ctx.shadowBlur=9;ctx.shadowColor="#ff2040";
+  ctx.beginPath();ctx.arc(0,0,12,0,Math.PI*2);ctx.moveTo(-21,0);ctx.lineTo(-7,0);ctx.moveTo(21,0);ctx.lineTo(7,0);ctx.moveTo(0,-21);ctx.lineTo(0,-7);ctx.moveTo(0,21);ctx.lineTo(0,7);ctx.stroke();ctx.restore();
+}
+function update(dt){
+  if(!running)return;
+  player.x+=move.x*220*dt;player.y+=move.y*220*dt;
+  player.x=Math.max(12,Math.min(W-12,player.x));player.y=Math.max(12,Math.min(H-12,player.y));
+  spawnTimer-=dt;if(spawnTimer<=0){spawnTarget();spawnTimer=Math.max(.38,1.35-wave*.065)}
+  for(let i=targets.length-1;i>=0;i--){
+    const t=targets[i],dx=player.x-t.x,dy=player.y-t.y,dist=Math.hypot(dx,dy)||1;
+    t.x+=dx/dist*t.speed*dt;t.y+=dy/dist*t.speed*dt;
+    if(dist<25){targets.splice(i,1);health-=15;updateHUD()}
+  }
+  particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt});
+  particles=particles.filter(p=>p.life>0);
+  if(score>=wave*500){wave++;updateHUD()}
+  if(health<=0)endGame();
+}
+function loop(time){const dt=Math.min((time-lastTime)/1000||0,.05);lastTime=time;update(dt);draw();requestAnimationFrame(loop)}
+function startGame(){
+  score=0;wave=1;health=100;ammo=12;targets=[];particles=[];spawnTimer=0;reloading=false;running=true;
+  player.x=W/2;player.y=H/2;aim.x=W*.68;aim.y=H*.45;move.x=move.y=0;updateHUD();$("overlay").style.display="none";
+}
+function endGame(){
+  running=false;$("overlay").style.display="flex";$("menu").querySelector("h1").textContent="GAME OVER";
+  $("menu").querySelector("p").textContent="FINAL SCORE: "+score;$("start").textContent="PLAY AGAIN";
+}
+$("start").addEventListener("click",()=>{$("menu").querySelector("h1").textContent="NIGHTFALL";startGame()});
+function point(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
+canvas.addEventListener("pointerdown",e=>{
+  if(!running)return;const p=point(e);aim=p;aimPointer=e.pointerId;canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove",e=>{if(e.pointerId===aimPointer)aim=point(e)});
+canvas.addEventListener("pointerup",e=>{if(e.pointerId===aimPointer)aimPointer=null});
+const base=$("stickBase"),knob=$("stick");
+function setStick(e){
+  const r=base.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  let dx=e.clientX-cx,dy=e.clientY-cy,dist=Math.hypot(dx,dy),max=43;
+  if(dist>max){dx=dx/dist*max;dy=dy/dist*max}
+  knob.style.transform=`translate(${dx}px,${dy}px)`;
+  move.x=dx/max;move.y=dy/max;
+}
+base.addEventListener("pointerdown",e=>{e.preventDefault();stickPointer=e.pointerId;base.setPointerCapture(e.pointerId);setStick(e)});
+base.addEventListener("pointermove",e=>{if(e.pointerId===stickPointer)setStick(e)});
+function releaseStick(e){if(e.pointerId!==stickPointer)return;stickPointer=null;move.x=move.y=0;knob.style.transform="translate(0,0)"}
+base.addEventListener("pointerup",releaseStick);base.addEventListener("pointercancel",releaseStick);
+$("fire").addEventListener("pointerdown",e=>{e.preventDefault();fire()});
+$("reload").addEventListener("pointerdown",e=>{e.preventDefault();reload()});
+addEventListener("contextmenu",e=>e.preventDefault());
+document.addEventListener("visibilitychange",()=>{if(document.hidden){move.x=move.y=0;knob.style.transform="translate(0,0)"}});
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
